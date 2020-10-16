@@ -27,12 +27,15 @@ class match_block(nn.Module):
         self.sub_sample = False
 
         self.in_channels = inplanes
+
         self.inter_channels = None
+
 
         if self.inter_channels is None:
             self.inter_channels = self.in_channels // 2
             if self.inter_channels == 0:
                 self.inter_channels = 1
+        print('inter_channels, corresponde a la floor_division de los canales de entrada por 2, con minimo de 1:', self.inter_channels)
 
         conv_nd = nn.Conv2d
         max_pool_layer = nn.MaxPool2d(kernel_size=(2, 2))
@@ -74,52 +77,100 @@ class match_block(nn.Module):
         
     def forward(self, detect, aim):
 
-        
+        #Aim corresponde a la query
+        #Detect corresponde a la imágen en la que se hará la detección
 
         batch_size, channels, height_a, width_a = aim.shape
+        print("aim.shape: forma de la query", aim.shape)
+
         batch_size, channels, height_d, width_d = detect.shape
+        print("detect.shape: forma de la imagen en la que se realizará la detección", detect.shape)
+
 
         #####################################find aim image similar object ####################################################
 
-        d_x = self.g(detect).view(batch_size, self.inter_channels, -1)
+
+        d_x = self.g(detect)
+        print("\nd_x:")
+        print("Corresponde a una convolución 'g' 2d de 1x1, stride=1, padding=0 sobre la imagen:",d_x.shape)
+        d_x = d_x.view(batch_size, self.inter_channels, -1)
+        print("Posteriormente se hace un reshape con forma (batch_size, inter_channels, H_img_after_bbone*W_img_after_bbone):", d_x.shape)
         d_x = d_x.permute(0, 2, 1).contiguous()
+        print("Se permuta para dejar los canales como ultima dimension:", d_x.shape)
 
-        a_x = self.g(aim).view(batch_size, self.inter_channels, -1)
+        print("\na_x:")
+        a_x = self.g(aim)
+        print("Corresponde a la misma convolución 'g' 2d de 1x1, stride=1, padding=0 pero sobre la query",a_x.shape)
+        a_x = a_x.view(batch_size, self.inter_channels, -1)
+        print("Posteriormente se hace un reshape con forma (batch_size, inter_channels, H_query_after_bbone*W_query_after_bbone):", a_x.shape)
         a_x = a_x.permute(0, 2, 1).contiguous()
+        print("Se permuta para dejar los canales como ultima dimension", a_x.shape)
 
-        theta_x = self.theta(aim).view(batch_size, self.inter_channels, -1)
+        print("\ntheta_x:")
+        theta_x = self.theta(aim)
+        print("Corresponde a una convolución 'theta' 2d de 1x1, stride=1, padding=0 sobre la query:",theta_x.shape)
+        theta_x = theta_x.view(batch_size, self.inter_channels, -1)
+        print("Posteriormente se hace un reshape con forma (batch_size, inter_channels, H_query_after_bbone*W_query_after_bbone):", theta_x.shape)
         theta_x = theta_x.permute(0, 2, 1)
+        print("Se permuta para dejar los canales como ultima dimension:", theta_x.shape)
 
-        phi_x = self.phi(detect).view(batch_size, self.inter_channels, -1)
+        print("\nphi_x:")
+        phi_x = self.phi(detect)
+        print("Corresponde a una convolución 'phi' 2d de 1x1, stride=1, padding=0 sobre la imagen:",phi_x.shape)
+        phi_x = phi_x.view(batch_size, self.inter_channels, -1)
+        print("Posteriormente se hace un reshape con (forma batch_size, inter_channels, H_img_after_bbone*W_img_after_bbone):", phi_x.shape)
+        print("En phi no hay permutación de canales")
 
-        
+
 
         f = torch.matmul(theta_x, phi_x)
+        print("\nf: es el producto matricial entre theta_x y phi_x, tiene la forma de (1, H_query_after_bbone*W_query_after_bbone, H_img_after_bbone*W_img_after_bbone)", f.shape)
 
         N = f.size(-1)
         f_div_C = f / N
+        print("\nf_div_C:")
+        print("Se normaliza f por la el escalar de la cantidad en la ultima dimensión H_img_after_bbone*W_img_after_bbone")
+        
 
         f = f.permute(0, 2, 1).contiguous()
         N = f.size(-1)
         fi_div_C = f / N
+        print("Se permutan la ultima y penultima dimension y se normaliza por el escalar de la ahora ultima dimension H_query_after_bbone*W_query_after_bbone")
+        print("Queda finalmente con la forma (1, H_img_after_bbone*W_img_after_bbone, H_query_after_bbone*W_query_after_bbone):", f.shape)
 
+        print("\nnon_aim:")
         non_aim = torch.matmul(f_div_C, d_x)
+        print("Es el producto matricial de f_div_C con d_x (que se origina de la imagen):", non_aim.shape)
         non_aim = non_aim.permute(0, 2, 1).contiguous()
+        print("Se permutan sus canales nuevamente", non_aim.shape)
         non_aim = non_aim.view(batch_size, self.inter_channels, height_a, width_a)
+        print("Se hace un reshape en el cual se recuperan las dimensiones iniciales de la query", non_aim.shape)
         non_aim = self.W(non_aim)
+        print("Se pasa por una convolucion 'W' de 1x1, padding=0, stride=1, con salida igual a los canales de entrada al bloque (originales del input) y luego por un nodo de batch_normalization_2d", non_aim.shape)
         non_aim = non_aim + aim
+        print("Se combina este vector con la query mediante la suma")
 
+
+        print("\nnon_det")
         non_det = torch.matmul(fi_div_C, a_x)
+        print("Es el producto matricial de f_div_C con a_x (que se origina de la query):", non_det.shape)
         non_det = non_det.permute(0, 2, 1).contiguous()
+        print("Se permutan sus canales nuevamente", non_det.shape)
         non_det = non_det.view(batch_size, self.inter_channels, height_d, width_d)
+        print("Se hace un reshape en el cual se recuperan las dimensiones iniciales de la imagen", non_det.shape)
         non_det = self.Q(non_det)
+        print("Se pasa por una convolucion 'Q' de 1x1, padding=0, stride=1, con salida igual a los canales de entrada al bloque (originales del input) y luego por un nodo de batch_normalization_2d", non_det.shape)
         non_det = non_det + detect
+        print("Se combina este vector con la Imagen mediante la suma")
 
         ##################################### Response in chaneel weight ####################################################
 
         c_weight = self.ChannelGate(non_aim)
+        print("\nc_weight: se realiza un channel_gate, que hace el squeeze-and-excitation desde la query", c_weight.shape)
         act_aim = non_aim * c_weight
+        print("\nact_aim: Se ponderan las características de la query que tiene la informacion agregada de la imágen con la exitacion por canal", act_aim.shape)
         act_det = non_det * c_weight
+        print("\nact_det: Se ponderan las características de la imágen que tiene la informacion agregada de la query con la exitacion por canal", act_det.shape)
 
         return non_det, act_det, act_aim, c_weight
 
@@ -151,16 +202,27 @@ class _fasterRCNN(nn.Module):
         self.triplet_loss = torch.nn.MarginRankingLoss(margin = cfg.TRAIN.MARGIN)
 
     def forward(self, im_data, query, im_info, gt_boxes, num_boxes):
+        print("\nInicio Faster-RCNN")
         batch_size = im_data.size(0)
+        print('batch_size: Tamaño del batch',batch_size)
+
+
 
         im_info = im_info.data
+
         gt_boxes = gt_boxes.data
+
         num_boxes = num_boxes.data
+        print('num_boxes', num_boxes)
 
         # feed image data to base model to obtain base feature map
         detect_feat = self.RCNN_base(im_data)
-        query_feat = self.RCNN_base(query)
+        print("detect_feat: Feature map de la img luego del backbone" , detect_feat.shape)    
 
+        query_feat = self.RCNN_base(query)
+        print("query_feat: Feature map de la query luego del backbone" , query_feat.shape)    
+
+        print('\nInicio match_block')
         rpn_feat, act_feat, act_aim, c_weight = self.match_net(detect_feat, query_feat)
 
 
