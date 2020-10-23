@@ -268,3 +268,4 @@ GSYMS
 GPATH
 tags
 TAGS
+lib/pycocotools/_mask.c

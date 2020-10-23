@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=$GPU_ID python trainval_net_testing.py --dataset coco --net res50 --bs 1 --nw 1 --lr 0.01 --lr_decay_step 4 --cuda --g 1 --seen 1

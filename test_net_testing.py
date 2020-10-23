@@ -30,6 +30,11 @@ from model.faster_rcnn.resnet import resnet
 
 import pdb
 
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+
+
+
 try:
     xrange          # Python 2
 except NameError:
@@ -219,7 +224,7 @@ if __name__ == '__main__':
         for i,index in enumerate(ratio_index_vu[0]):
           
           data = next(data_iter_vu)
-
+          
 
           im_data.data.resize_(data[0].size()).copy_(data[0])
           query.data.resize_(data[1].size()).copy_(data[1])
@@ -227,6 +232,12 @@ if __name__ == '__main__':
           gt_boxes.data.resize_(data[3].size()).copy_(data[3])
           catgory.data.resize_(data[4].size()).copy_(data[4])
 
+          plt.figure()
+          plt.imshow(im_data[0].permute(1,2,0))
+
+          plt.figure()
+          plt.imshow(query[0].permute(1,2,0))
+          plt.show()
 
           # Run Testing
           print('\nEntradas al modelo:')
@@ -234,6 +245,8 @@ if __name__ == '__main__':
           print('query:', query.shape)
           print('im_info', im_info)
           print('gt_boxes', gt_boxes)
+
+          
 
           det_tic = time.time()
           rois, cls_prob, bbox_pred, \
